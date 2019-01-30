@@ -17,7 +17,10 @@ CLR = {
     "endc":     '\033[0m'
 }
 
-def usage(self):
+def usage(self, msg=None):
+    if msg and len(msg):
+        print "\n!*=> %s" % msg
+
     print """
 Usage: {0} <option> <value>
 Options:
@@ -28,14 +31,24 @@ Options:
                                         (if not given all BCC clusters are queried)
     # CM related
     -cm|--cm-mac <mac>                  get CM details by MAC                       [ accepts a-f,0-9 with . and :      ]
+    -ci|--cm-ip <ip6addr>               get CM details by IPv6
     -ccc|--cm-count-cmts [<cmts>]       get CM count per CMTS, defaults to 'all'    [ accepts swcmt0000001, swcmt1, 1   ]
 
     # CM firmware related
     -fc|--fw-count                      get list and counts per CM firmware
 
-    !! NOTE !! firmware version (fw-string) *must* be single quotes enclosed - eg: 'Fw_version string.10'
+    !! # firmware version string (fw-string) *must* be single quotes enclosed
+    !! # eg: 'Fw_version string.10'
     -fm|--fw-mac <fw-string>            get list of cable modem MACs having FW installed
     -fmi|--fw-mac-ip <fw-string>        get list of cable modem MACs + IPs having FW installed
+
+    # TOPOLOGY related
+    -t|--topology-full                  get full topology
+    -ts|--topology-state <val>          get topology by state                       [ accepts nsw, vic, nt, ..          ]
+    -th|--topology-hub <val>            get topology by hub                         [ accepts 6MLO-Mullaloo, 6MLO       ]
+    -tc|--topology-cmts <val>           get topology by cmts                        [ accepts swcmt0000001, swcmt1, 1   ]
+    -tlh|--topology-list-hub            get list of all hubs
+    -tlc|--topology-list-cmts           get list of all cmts
 
     # Generic
     -gm|--generic-mac <mac>             produces MAC in all known formats
@@ -144,14 +157,13 @@ def macOutput(mac, delimeter=" "):
     print "%s%s%s%s%s" % (mac, delimeter, macWithDots, delimeter, macWithCols)
 
 def cmOutput(mac, macdets):
-    #print "%-8s: %s" % ("Mac", mac.upper())
     for key in sorted(macdets):
         if isinstance(macdets[key], list):
             val = ", ".join(macdets[key])
-            print "%-8s: %s" % (key, val)
-            continue
+        else:
+            val = macdets[key]
 
-        print "%-8s: %s" % (key, macdets[key])
+        print "%-8s: %s" % (key.lower(), val)
 
 def fwCountOutput(fwcount):
     total = 0
@@ -182,6 +194,15 @@ def fwCmtsMacOutput(fwcmtsdict, showip=False):
             val = "%s, %s" % (val, v)
 
         print "%s: %s" % (cmts, val)
+
+def topoOutput(topodict):
+    # state / hub / [cmts1, cmts2, ..]
+    for state in sorted(topodict):
+        print "%s:" % state
+
+        for hub in sorted(topodict[state]):
+            cmts = ', '.join(sorted(topodict[state][hub]))
+            print "\t%-25s: %s" % (hub, cmts)
 
 def valueCheck(opt, val):
     if not val:
@@ -320,6 +341,57 @@ def main(params):
         data = t3w.httpRequest("getfwcmtsmac", bfw.lower())
 
         fwCmtsMacOutput(data, True if (opt == "-fmi" or opt == "--fw-mac-ip") else False)
+
+    ##
+    ## Topology related (collector)
+
+    elif opt == "-t" or opt == "--topology-full":
+        data = t3w.httpRequest("getfulltopo", "full")
+        topoOutput(data)
+
+    elif opt == "-ts" or opt == "--topology-state":
+        if not val:
+            usage(self)
+            return 12
+
+        data = t3w.httpRequest("getstatetopo", val)
+        topoOutput(data)
+
+    elif opt == "-th" or opt == "--topology-hub":
+        if not val:
+            usage(self)
+            return 13
+
+        data = t3w.httpRequest("gethubtopo", val)
+        topoOutput(data)
+
+    elif opt == "-tc" or opt == "--topology-cmts":
+        if not val:
+            usage(self)
+            return 14
+
+        valbkp = val
+        if re.match("swcmt", val):
+            val = val[5:]
+
+        if not re.search("^[0-9]+$", val):
+            usage(self, "Bad CMTS format '%s'" % valbkp)
+            return 15
+
+        val = "swcmt%s" % val.zfill(7)
+
+        data = t3w.httpRequest("getcmtstopo", val)
+        topoOutput(data)
+
+    elif opt == "-tlh" or opt == "--topology-list-hub":
+        data = t3w.httpRequest("getitemlist", "hub")
+        for hub in sorted(data):
+            print hub
+
+    elif opt == "-tlc" or opt == "--topology-list-cmts":
+        data = t3w.httpRequest("getitemlist", "cmts")
+        for cmts in sorted(data):
+            print cmts
 
     ##
     ## GENERIC

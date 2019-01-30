@@ -27,7 +27,14 @@ class T3web:
 
         # FW related (collector)
         "getfwcount":       "col",
-        "getfwcmtsmac":     "col"
+        "getfwcmtsmac":     "col",
+
+        # TOPO related (collector)
+        "getfulltopo":      "col",
+        "getstatetopo":     "col",
+        "gethubtopo":       "col",
+        "getcmtstopo":      "col",
+        "getitemlist":      "col",
     }
 
     def __init__(self, host=None, port=None, root=None):
