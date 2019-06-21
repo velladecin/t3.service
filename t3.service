@@ -25,33 +25,34 @@ def usage(self, msg=None):
 Usage: {0} <option> <value>
 Options:
     # BCC related
-    -bc|--bcc-cmts <val>                get list of CMTS' this BCC cluster serves   [ accepts bcc1-4, 1-4, bccsp, sp    ]
-    -bb|--bcc-bcc <val>                 get BCC cluster this CMTS belongs to        [ accepts swcmt0000001, swcmt1, 1   ]
-    -bs|--bcc-status [<val>]            get status of BCC cluster by server         [ accepts bcc1-4, 1-4, bccsp, sp    ]
+    -bc |--bcc-cmts <val>               get list of CMTS' this BCC cluster serves   [ accepts bcc1-4, 1-4, bccsp, sp    ]
+    -bb |--bcc-bcc <val>                get BCC cluster this CMTS belongs to        [ accepts swcmt0000001, swcmt1, 1   ]
+    -bs |--bcc-status [<val>]           get status of BCC cluster by server         [ accepts bcc1-4, 1-4, bccsp, sp    ]
                                         (if not given all BCC clusters are queried)
     # CM related
-    -cm|--cm-mac <mac>                  get CM details by MAC                       [ accepts a-f,0-9 with . and :      ]
-    -ci|--cm-ip <ip6addr>               get CM details by IPv6
+    -cm |--cm-mac <mac>                 get brief CM details by MAC                 [ accepts a-f,0-9 with . and :      ]
+    -cmf|--cm-mac-full <mac>            get full  CM details by MAC                 [ accepts a-f,0-9 with . and :      ]
+    -ci |--cm-ip <ip6addr>              get full  CM details by IPv6
     -ccc|--cm-count-cmts [<cmts>]       get CM count per CMTS, defaults to 'all'    [ accepts swcmt0000001, swcmt1, 1   ]
 
     # CM firmware related
-    -fc|--fw-count                      get list and counts per CM firmware
+    -fc |--fw-count                     get list and counts per CM firmware
 
     !! # firmware version string (fw-string) *must* be single quotes enclosed
     !! # eg: 'Fw_version string.10'
-    -fm|--fw-mac <fw-string>            get list of cable modem MACs having FW installed
+    -fm |--fw-mac <fw-string>           get list of cable modem MACs having FW installed
     -fmi|--fw-mac-ip <fw-string>        get list of cable modem MACs + IPs having FW installed
 
     # TOPOLOGY related
-    -t|--topology-full                  get full topology
-    -ts|--topology-state <val>          get topology by state                       [ accepts nsw, vic, nt, ..          ]
-    -th|--topology-hub <val>            get topology by hub                         [ accepts 6MLO-Mullaloo, 6MLO       ]
-    -tc|--topology-cmts <val>           get topology by cmts                        [ accepts swcmt0000001, swcmt1, 1   ]
+    -t  |--topology-full                get full topology
+    -ts |--topology-state <val>         get topology by state                       [ accepts nsw, vic, nt, ..          ]
+    -th |--topology-hub <val>           get topology by hub                         [ accepts 6MLO-Mullaloo, 6MLO       ]
+    -tc |--topology-cmts <val>          get topology by cmts                        [ accepts swcmt0000001, swcmt1, 1   ]
     -tlh|--topology-list-hub            get list of all hubs
     -tlc|--topology-list-cmts           get list of all cmts
 
     # Generic
-    -gm|--generic-mac <mac>             produces MAC in all known formats
+    -gm |--generic-mac <mac>            produces MAC in all known formats
     -gms|--generic-mac-search <mac>     produces MAC in all known formats ready for egrep search
 
     # Help
@@ -65,7 +66,6 @@ def get_time(ts, format):
     return datetime.fromtimestamp(int(ts)).strftime(format)
 
 def bccStatusOutput(data):
-    #pprint(data)
     clrl = "" # cluster / role
     for cluster in data:
         for role in data[cluster]:
@@ -88,6 +88,10 @@ def bccStatusOutput(data):
 
             noderesult = data[cluster][role]["Result"]
 
+            if not noderesult:
+                print "\t%s" % 'None'
+                continue
+
             if len(noderesult) > 4:
                 print "\t%s" % noderesult
                 continue
@@ -95,7 +99,25 @@ def bccStatusOutput(data):
             now = int(time.time())
             for service in sorted(noderesult):
                 print "\t%s" % service
-                for check in noderesult[service]:
+
+                # lastchecked is displayed first
+                # TODO - fix the code repetition!
+                lc = "lastchecked"
+                try:
+                    lcstatus = get_time(noderesult[service][lc], "%Y-%m-%d %H:%M:%S")
+
+                    if (now - int(noderesult[service][lc])) > 60: # one min
+                        lcstatus = "%sstale!%s => %s" % (CLR["red"], CLR["endc"], lcstatus)
+
+                except KeyError:
+                    lcstatus = "Empty/invalid response from server (is CGI serving '/bccstatus'?)"
+
+                print "\t  %s:\t %s" % (lc, lcstatus)
+
+                for check in sorted(noderesult[service]):
+                    if check == "lastchecked":
+                        continue
+
                     color = CLR["red"]
                     res = "Empty/invalid response from server (is CGI serving '/bccstatus'?)" # default
                     sts = "UNKNOWN"
@@ -153,17 +175,40 @@ def macOutput(mac, delimeter=" "):
 
     macWithDots = "%s.%s.%s"            % (mac[:4], mac[4:8], mac[8:])
     macWithCols = "%s:%s:%s:%s:%s:%s"   % (mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:])
+    macForUrl   = '%3A'.join([mac[:2], mac[2:4], mac[4:6], mac[6:8], mac[8:10], mac[10:]])
 
-    print "%s%s%s%s%s" % (mac, delimeter, macWithDots, delimeter, macWithCols)
+    print "%s%s%s%s%s%s%s" % (mac, delimeter, macWithDots, delimeter, macWithCols, delimeter, macForUrl)
 
-def cmOutput(mac, macdets):
-    for key in sorted(macdets):
-        if isinstance(macdets[key], list):
-            val = ", ".join(macdets[key])
-        else:
-            val = macdets[key]
+def _getListOutput(somelist, fullout):
+    # should we validate here, or should the caller?
+    if fullout:
+        return ", ".join(somelist)
 
-        print "%-8s: %s" % (key.lower(), val)
+    return somelist[0]
+
+def cmOutput(mac, macdets, fullout=False):
+    brief = ["Hub", "Cmts", "Mac", "State", "fw", "status", "ip"]
+    pformat = "%-9s: %s"
+
+    for bkey in brief:
+        val = macdets[bkey]
+
+        if isinstance(val, list):
+            val = _getListOutput(val, fullout)
+
+        print pformat % (bkey.lower(), val)
+
+    if fullout:
+        for fkey in sorted(macdets):
+            if fkey in brief:
+                continue
+
+            val = macdets[fkey]
+
+            if isinstance(val, list):
+                val = _getListOutput(val, fullout)
+
+            print pformat % (fkey.lower(), val)
 
 def fwCountOutput(fwcount):
     total = 0
@@ -290,7 +335,7 @@ def main(params):
     ##
     ## CABLE MODEM related (collector)
 
-    elif opt == "-cm" or opt == "--cm-mac":
+    elif opt == "-cm" or opt == "--cm-mac" or opt == "-cmf" or opt == "--cm-mac-full":
         if not val:
             usage(self)
             return 7
@@ -304,7 +349,11 @@ def main(params):
         val = val.replace(".", "")
 
         data = t3w.httpRequest("getmac", val)
-        cmOutput(val, data)
+
+        if opt == "-cmf" or opt == "--cm-mac-full":
+            cmOutput(val, data, True)
+        else:
+            cmOutput(val, data)
 
     elif opt == "-ci" or opt == "--cm-ip":
         if not val:
