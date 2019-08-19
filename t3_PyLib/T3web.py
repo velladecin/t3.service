@@ -16,25 +16,30 @@ class T3web:
         # action name       location name
 
         # BCC related
-        "getbcc":           "bcc",
-        "getcmts":          "bcc",
-        "getbccstatus":     "bcc",
+        "getbcc":               "bcc",
+        "getcmts":              "bcc",
+        "getbccstatus":         "bcc",
+        "getroutingelement":    "bcc",
 
         # CM related (collector)
-        "getmac":           "col",
-        "getip":            "col",
-        "getcmcount":       "col",
+        "getmac":               "col",
+        "getip":                "col",
+        "getcmcount":           "col",
 
         # FW related (collector)
-        "getfwcount":       "col",
-        "getfwcmtsmac":     "col",
+        "getfwcount":           "col",
+        "getfwcmtsmac":         "col",
 
         # TOPO related (collector)
-        "getfulltopo":      "col",
-        "getstatetopo":     "col",
-        "gethubtopo":       "col",
-        "getcmtstopo":      "col",
-        "getitemlist":      "col",
+        "getfulltopo":          "col",
+        "getstatetopo":         "col",
+        "gethubtopo":           "col",
+        "getcmtstopo":          "col",
+        "getitemlist":          "col",
+
+        # CMTS related (collector)
+        "getfn":                "col",
+        "getipv6gw":            "col",
     }
 
     def __init__(self, host=None, port=None, root=None):
