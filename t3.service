@@ -13,9 +13,29 @@ CLR = {
     "red":      '\033[91m',
     "green":    '\033[92m',
     "yellow":   '\033[93m',
+    "blue":     '\033[94m',
+    "purple":   '\033[95m',
     "cyan":     '\033[96m',
     "endc":     '\033[0m'
 }
+
+def printRed(text,      stext=""):  printColor("r", text, stext)
+def printGreen(text,    stext=""):  printColor("g", text, stext)
+def printPurple(text,   stext=""):  printColor("p", text, stext)
+def printCyan(text,     stext=""):  printColor("c", text, stext)
+def printColor(clr, text, stext=""):
+    if   clr == "r": color = CLR["red"]
+    elif clr == "g": color = CLR["green"]
+    elif clr == "p": color = CLR["purple"]
+    elif clr == "c": color = CLR["cyan"]
+    else:
+        print ">> Unknown color code: %s" % clr
+        sys.exit(50)
+
+    if stext:
+        print "%s%s%s %s" % (color, text, CLR["endc"], stext)
+    else:
+        print "%s%s%s" % (color, text, CLR["endc"])
 
 def usage(self, msg=None):
     if msg and len(msg):
@@ -25,15 +45,18 @@ def usage(self, msg=None):
 Usage: {0} <option> <value>
 Options:
     # BCC related
-    -bc |--bcc-cmts <val>               get list of CMTS' this BCC cluster serves   [ accepts bcc1-4, 1-4, bccsp, sp    ]
-    -bb |--bcc-bcc <val>                get BCC cluster this CMTS belongs to        [ accepts swcmt0000001, swcmt1, 1   ]
-    -bs |--bcc-status [<val>]           get status of BCC cluster by server         [ accepts bcc1-4, 1-4, bccsp, sp    ]
+    -bc |--bcc-cmts <bcc>               get list of CMTS' this BCC cluster serves   [ accepts bcc1-4, 1-4, bccsp, sp    ]
+    -bb |--bcc-bcc <cmts>               get BCC cluster this CMTS belongs to        [ accepts swcmt0000001, swcmt1, 1   ]
+    -bs |--bcc-status [<bcc>]           get status of BCC cluster by server         [ accepts bcc1-4, 1-4, bccsp, sp    ]
                                         (if not given all BCC clusters are queried)
+    -bi |--bcc-ipv6gw [<cmts>]          get list of ipv6gw/routingelements for CMTS [ accepts swcmt0000001, swcmt1, 1   ]
+
     # CM related
-    -cm |--cm-mac <mac>                 get brief CM details by MAC                 [ accepts a-f,0-9 with . and :      ]
-    -cmf|--cm-mac-full <mac>            get full  CM details by MAC                 [ accepts a-f,0-9 with . and :      ]
+    -cm |--cm-mac <mac>                 get brief CM details by MAC                 [ accepts macs with '.', ':', or without ]
+    -cmf|--cm-mac-full <mac>            get full  CM details by MAC                 [ accepts macs with '.', ':', or without ]
     -ci |--cm-ip <ip6addr>              get full  CM details by IPv6
     -ccc|--cm-count-cmts [<cmts>]       get CM count per CMTS, defaults to 'all'    [ accepts swcmt0000001, swcmt1, 1   ]
+    -cmc|--cm-macs-cmts [<cmts>]        get CM macs per CMTS, defaults to 'all'     [ accepts swcmt0000001, swcmt1, 1   ] ######## TODO
 
     # CM firmware related
     -fc |--fw-count                     get list and counts per CM firmware
@@ -51,6 +74,14 @@ Options:
     -tlh|--topology-list-hub            get list of all hubs
     -tlc|--topology-list-cmts           get list of all cmts
 
+    # CMTS related
+    -mf |--cmts-fn [<cmts>]             get list of FNs per cmts                    [ accepts swcmt0000001, swcmt1, 1   ]
+    -mi |--cmts-ipv6gw [<cmts>]         get list of IPv6 GWs (routing elements)     [ accepts swcmt0000001, swcmt1, 1   ]
+
+    # Audit related
+    -ambi|--audit-cmts-bcc-ipv6gw [<cmts>]
+                                        compare list of IPv6 GWs on CMTS vs BCC     [ accepts swcmt0000001, swcmt1, 1   ]
+
     # Generic
     -gm |--generic-mac <mac>            produces MAC in all known formats
     -gms|--generic-mac-search <mac>     produces MAC in all known formats ready for egrep search
@@ -58,6 +89,32 @@ Options:
     # Help
     -h|--help                           print this helpfull message
 """.format(self)
+
+def cmtsCablemacMapOfMaps(map, piggyback=False):
+    for cmts in sorted(map):
+        print "=> %s" % cmts
+        if not piggyback:
+            print "\tcable-mac: Ipv6gw"
+
+        # convert string to int
+        nsMap = {}
+        for cablemac in map[cmts]:
+            nsMap[int(cablemac)] = map[cmts][cablemac]
+
+        # numerical sort
+        for cablemac in sorted(nsMap):
+            print "\t%s: %s" % (cablemac, nsMap[cablemac])
+
+def cmtsCountMapOfMaps(map, showcount=False):
+    if showcount:
+        # piggyback on the above
+        return cmtsCablemacMapOfMaps(map, True)
+
+    for cmts in sorted(map):
+        print "=> %s" % cmts
+
+        for val in sorted(map[cmts].values()):
+            print "\t%s" % val
 
 def simpleKeyValOut(key, val):
     print "%s: %s" % (key, val)
@@ -187,7 +244,7 @@ def _getListOutput(somelist, fullout):
     return somelist[0]
 
 def cmOutput(mac, macdets, fullout=False):
-    brief = ["Hub", "Cmts", "Mac", "State", "fw", "status", "ip"]
+    brief = ["Hub", "Cmts", "Mac", "State", "Bcc", "fw", "status", "ip"]
     pformat = "%-9s: %s"
 
     for bkey in brief:
@@ -267,6 +324,12 @@ def getBccCluster(val):
 
     return b
 
+def getFullCmtsName(val):
+    val = getCmtsNum(val)
+    val = "swcmt%s" % val.zfill(7)
+
+    return val
+
 def getCmtsNum(val):
     # remove what we don't need
     val = re.sub("^swcmt(0+)?", "", val)
@@ -276,6 +339,71 @@ def getCmtsNum(val):
         sys.exit(33)
 
     return val
+
+def getRoutingElement(self, t3w, val):
+    try:
+        res = re.search(r"^(swcmt)?(0+)?([0-9]+)$", val) # TypeError      (val = None)
+        cmtsnum = res.group(3)                           # AttributeError (val = "bad format")
+    except (TypeError, AttributeError):
+        usage(self)
+        return 6
+
+    data = t3w.httpRequest("getroutingelement", cmtsnum)
+    return data
+
+def prettyDiffIpv6gw(cmtsdata, bccdata):
+    if len( set(cmtsdata.keys()) ^ set(bccdata.keys()) ):
+        printRed(">>> CMTS numbers and/or names don't match - collection error")
+        sys.exit(1)
+
+    for cmts in cmtsdata.keys():
+        # Issue here:
+        # cmtsdata has keys based on cable-mac
+        # bccdata  has keys based on order
+        # they may or may not match..
+
+        gw1 = cmtsdata[cmts].values()
+        gw2 = bccdata[cmts].values()
+
+        head = "=> CMTS: %s" % cmts
+
+        if not len( set(gw1) ^ set(gw2) ):
+            # good
+            print "%s" % head
+            printGreen("  IPv6gw config matches on CMTS and BCC")
+        else:
+            # bad
+            print "%s" % head
+            printPurple("< CMTS diff", "C++, B--")
+            printCyan("> BCC  diff", "C--, B++")
+            print "---"
+
+            tmp1 = {}
+            for val in gw1: tmp1[val] = 1
+            tmp2 = {}
+            for val in gw2: tmp2[val] = 1
+
+            for key in gw1:
+                try:
+                    del tmp2[key]
+                except KeyError:
+                    continue # don't delete from tmp1
+
+                del tmp1[key]
+
+            tmp1run = 0
+            for key in sorted(tmp1):
+                printPurple("  < %s" % key)
+
+                if tmp1run == 0:
+                    tmp1run += 1
+
+            for key in sorted(tmp2):
+                if tmp1run == 1:
+                    print "---"
+                    tmp1run += 1
+
+                printCyan("  > %s" % key)
 
 def main(params):
     self = params[0]
@@ -331,6 +459,14 @@ def main(params):
 
         data = t3w.httpRequest("getbccstatus", b)
         bccStatusOutput(data)
+
+    elif opt == "-bi" or opt == "--bcc-ipv6gw":
+        if not val:
+            usage(self)
+            return 5
+
+        data = getRoutingElement(self, t3w, val)
+        cmtsCountMapOfMaps(data)
 
     ##
     ## CABLE MODEM related (collector)
@@ -419,15 +555,7 @@ def main(params):
             usage(self)
             return 14
 
-        valbkp = val
-        if re.match("swcmt", val):
-            val = val[5:]
-
-        if not re.search("^[0-9]+$", val):
-            usage(self, "Bad CMTS format '%s'" % valbkp)
-            return 15
-
-        val = "swcmt%s" % val.zfill(7)
+        val = getFullCmtsName(val)
 
         data = t3w.httpRequest("getcmtstopo", val)
         topoOutput(data)
@@ -441,6 +569,51 @@ def main(params):
         data = t3w.httpRequest("getitemlist", "cmts")
         for cmts in sorted(data):
             print cmts
+
+    ##
+    ## CMTS related
+
+    elif opt == "-mf" or opt == "--cmts-fn":
+        if not val:
+            val = "all"
+        else:
+            val = getFullCmtsName(val)
+
+        data = t3w.httpRequest("getfn", val)
+        cmtsCablemacMapOfMaps(data)
+
+    elif opt == "-mi" or opt == "--cmts-ipv6gw":
+        if not val:
+            val = "all"
+        else:
+            val = getFullCmtsName(val)
+
+        data = t3w.httpRequest("getipv6gw", val)
+        cmtsCablemacMapOfMaps(data)
+
+
+    ##
+    ## Audit related
+
+    elif opt == "-ambi" or opt == "--audit-cmts-bcc-ipv6gw":
+        if not val:
+            usage(self)
+            return 31
+
+        cmts = getFullCmtsName(val)
+
+        cmtsdata = t3w.httpRequest("getipv6gw", cmts)
+        bccdata = getRoutingElement(self, t3w, cmts)
+
+        if not cmtsdata.keys():
+            printRed("Could not source Ipv6gw from CMTS")
+            return 32
+
+        if not bccdata.keys():
+            printRed("Could not source Ipv6gw from BCC")
+            return 33
+
+        prettyDiffIpv6gw(cmtsdata, bccdata)
 
     ##
     ## GENERIC
